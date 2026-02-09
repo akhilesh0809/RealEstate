@@ -1,0 +1,59 @@
+body { 
+    margin: 0; 
+    overflow: hidden; 
+    font-family: 'Segoe UI', sans-serif; 
+    background: #111; 
+}
+
+/* LEFT UI */
+#ui-left {
+    position: absolute; 
+    top: 20px; 
+    left: 20px;
+    background: rgba(0,0,0,0.8); 
+    color: white;
+    padding: 15px; 
+    border-radius: 8px; 
+    pointer-events: none;
+    user-select: none; 
+    border-left: 4px solid #4facfe; 
+    z-index: 10;
+    backdrop-filter: blur(5px);
+}
+
+.key { 
+    color: #4facfe; 
+    font-weight: bold; 
+}
+
+/* RIGHT UI (Desktop Only) */
+#ui-right {
+    position: absolute; 
+    top: 20px; 
+    right: 20px;
+    display: flex; 
+    flex-direction: column; 
+    gap: 10px;
+    z-index: 10;
+}
+
+.nav-btn {
+    background: rgba(0, 0, 0, 0.8); 
+    color: white; 
+    border: none;
+    border-right: 4px solid #00f260; 
+    padding: 12px 20px;
+    font-size: 14px; 
+    cursor: pointer; 
+    border-radius: 8px 0 0 8px;
+    text-align: right; 
+    transition: all 0.3s ease; 
+    backdrop-filter: blur(5px);
+    font-family: 'Segoe UI', sans-serif;
+}
+
+.nav-btn:hover { 
+    padding-right: 30px; 
+    border-right-color: #4facfe; 
+    background: rgba(255, 255, 255, 0.1);
+}
