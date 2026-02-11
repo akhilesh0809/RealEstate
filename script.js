@@ -6,8 +6,8 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 
 /* --- CONFIGURATION --- */
 const EYE_HEIGHT_DESKTOP = 1.7; 
-const LERP_SPEED = 0.1; 
-const MOVE_SPEED = 0.15; 
+const LERP_SPEED = 0.005; 
+const MOVE_SPEED = 0.05; 
 
 const locations = {
     "Ground Floor": { x: -19.24, y: -0.24, z: 58.78 },
@@ -22,25 +22,21 @@ const locations = {
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
-// --- VR RIG SETUP ---
 const userRig = new THREE.Group();
 scene.add(userRig);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
 userRig.add(camera);
 
-// Initial Position
 userRig.position.set(17.55, 0.00, 68.58);
-camera.position.y = EYE_HEIGHT_DESKTOP; // Desktop offset
+camera.position.y = EYE_HEIGHT_DESKTOP;
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.xr.enabled = true; // IMPORTANT
+renderer.xr.enabled = true; 
 document.body.appendChild(renderer.domElement);
-
-// Add VR Button
 document.body.appendChild(VRButton.createButton(renderer));
 
 const ambient = new THREE.HemisphereLight(0xffffff, 0x444444, 2.0);
@@ -49,40 +45,31 @@ const sun = new THREE.DirectionalLight(0xffffff, 1.5);
 sun.position.set(5, 10, 7);
 scene.add(sun);
 
-/* --- VR CONTROLLERS & VISUALS --- */
+/* --- BLUE SPHERE MARKER --- */
+const markerGeo = new THREE.SphereGeometry(0.2, 16, 16);
+const markerMat = new THREE.MeshBasicMaterial({ color: 0x0077ff, transparent: true, opacity: 0.7 });
+const marker = new THREE.Mesh(markerGeo, markerMat);
+marker.visible = false;
+scene.add(marker);
+
+/* --- VR CONTROLLERS --- */
 const controller1 = renderer.xr.getController(0);
 const controller2 = renderer.xr.getController(1);
-
-// Event Listeners for Trigger Press
 controller1.addEventListener('select', onVRSelect);
 controller2.addEventListener('select', onVRSelect);
+userRig.add(controller1, controller2);
 
-userRig.add(controller1);
-userRig.add(controller2);
-
-// Visual Models (Hands/Controllers)
 const controllerModelFactory = new XRControllerModelFactory();
-const controllerGrip1 = renderer.xr.getControllerGrip(0);
-controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
-userRig.add(controllerGrip1);
+const grip1 = renderer.xr.getControllerGrip(0);
+grip1.add(controllerModelFactory.createControllerModel(grip1));
+userRig.add(grip1);
 
-const controllerGrip2 = renderer.xr.getControllerGrip(1);
-controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
-userRig.add(controllerGrip2);
+const grip2 = renderer.xr.getControllerGrip(1);
+grip2.add(controllerModelFactory.createControllerModel(grip2));
+userRig.add(grip2);
 
-// Laser Beams
-const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-5)]);
-const laserLine = new THREE.Line(laserGeo);
-laserLine.scale.z = 5;
-
-const c1Line = laserLine.clone();
-const c2Line = laserLine.clone();
-controller1.add(c1Line);
-controller2.add(c2Line);
-
-// Teleport Marker (Reticle)
 const reticle = new THREE.Mesh(
-    new THREE.RingGeometry(0.1, 0.2, 32).rotateX(-Math.PI / 2),
+    new THREE.RingGeometry(0.1, 0.15, 32).rotateX(-Math.PI / 2),
     new THREE.MeshBasicMaterial({ color: 0x00f260 })
 );
 reticle.visible = false;
@@ -96,112 +83,128 @@ dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
 loader.setDRACOLoader(dracoLoader);
 
 loader.load('Scene-v1.glb', (gltf) => {
-    const model = gltf.scene;
-    scene.add(model);
-    model.traverse(n => {
+    scene.add(gltf.scene);
+    gltf.scene.traverse(n => {
         if(n.isMesh) {
             n.receiveShadow = true;
             collidables.push(n);
         }
     });
-}, undefined, (err) => console.error("Error loading Scene.glb:", err));
+}, undefined, (err) => console.error(err));
 
-/* STATE MANAGEMENT */
-let yaw = 0, pitch = 0;
+/* STATE */
+let yaw = 0; 
 const rigTarget = new THREE.Vector3().copy(userRig.position);
 let isMoving = false, isDragging = false;
 const mouse = new THREE.Vector2();
 const mouseDownPos = new THREE.Vector2();
-
-// Raycasters
 const raycaster = new THREE.Raycaster(); 
 const tempMatrix = new THREE.Matrix4();
 
-/* HELPER: Find floor height */
 function getFloorY(x, z, currentY) {
-    const origin = new THREE.Vector3(x, currentY + 2.0, z); 
-    const direction = new THREE.Vector3(0, -1, 0); 
-    const downRay = new THREE.Raycaster(origin, direction);
+    const downRay = new THREE.Raycaster(new THREE.Vector3(x, currentY + 2.0, z), new THREE.Vector3(0, -1, 0));
     const hits = downRay.intersectObjects(collidables);
     return hits.length > 0 ? hits[0].point.y : currentY; 
 }
 
-/* VR TELEPORT LOGIC */
-function onVRSelect(event) {
+function onVRSelect() {
     if (reticle.visible) {
-        // Teleport Rig to the Reticle position
-        rigTarget.set(reticle.position.x, reticle.position.y, reticle.position.z);
+        rigTarget.copy(reticle.position);
+        marker.position.copy(rigTarget);
+        marker.visible = true;
         isMoving = true;
     }
 }
 
-/* DESKTOP SIDEBAR LOGIC */
+/* UI SIDEBAR */
 const sidebar = document.getElementById('ui-right');
-Object.keys(locations).forEach(name => {
-    const btn = document.createElement('button');
-    btn.className = 'nav-btn';
-    btn.innerText = name;
-    btn.onclick = (e) => {
-        e.stopPropagation(); 
-        rigTarget.set(locations[name].x, locations[name].y, locations[name].z);
-        isMoving = true;
-    };
-    sidebar.appendChild(btn);
-});
+if (sidebar) {
+    Object.keys(locations).forEach(name => {
+        const btn = document.createElement('button');
+        btn.innerText = name;
+        btn.onclick = (e) => {
+            e.stopPropagation(); 
+            rigTarget.set(locations[name].x, locations[name].y, locations[name].z);
+            marker.position.copy(rigTarget);
+            marker.visible = true;
+            isMoving = true;
+        };
+        sidebar.appendChild(btn);
+    });
+}
 
-/* INPUTS (Desktop) */
-window.addEventListener('mousedown', (e) => { 
-    if(e.target.closest('#ui-right')) return;
-    isDragging = true; 
-    mouseDownPos.set(e.clientX, e.clientY);
-});
+/* DESKTOP & MOBILE INPUTS */
+const handleMoveStart = (x, y) => {
+    isDragging = true;
+    mouseDownPos.set(x, y);
+    mouse.x = (x / window.innerWidth) * 2 - 1;
+    mouse.y = -(y / window.innerHeight) * 2 + 1;
+};
 
-window.addEventListener('mouseup', (e) => {
-    isDragging = false; 
-    if(e.target.closest('#ui-right')) return;
-    const moveDistance = Math.hypot(e.clientX - mouseDownPos.x, e.clientY - mouseDownPos.y);
-
-    if (moveDistance < 5 && !renderer.xr.isPresenting) {
+const handleMoveEnd = (x, y) => {
+    isDragging = false;
+    const dist = Math.hypot(x - mouseDownPos.x, y - mouseDownPos.y);
+    if (dist < 10 && !renderer.xr.isPresenting) {
         raycaster.setFromCamera(mouse, camera);
         const hits = raycaster.intersectObjects(collidables);
         if (hits.length > 0) {
             const p = hits[0].point;
-            const targetFloorY = getFloorY(p.x, p.z, userRig.position.y);
-            rigTarget.set(p.x, targetFloorY, p.z);
+            rigTarget.set(p.x, getFloorY(p.x, p.z, userRig.position.y), p.z);
+            marker.position.copy(rigTarget);
+            marker.visible = true;
             isMoving = true;
         }
     }
-});
+};
 
-window.addEventListener('mousemove', (e) => {
+window.addEventListener('mousedown', e => { if(!e.target.closest('#ui-right')) handleMoveStart(e.clientX, e.clientY); });
+window.addEventListener('mouseup', e => { if(!e.target.closest('#ui-right')) handleMoveEnd(e.clientX, e.clientY); });
+window.addEventListener('mousemove', e => {
     mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
     if (isDragging && !renderer.xr.isPresenting) {
         isMoving = false;
         yaw -= e.movementX * 0.002;
-        pitch -= e.movementY * 0.002;
-        pitch = Math.max(-1.5, Math.min(1.5, pitch));
-        camera.rotation.set(pitch, yaw, 0);
+        camera.rotation.set(0, yaw, 0);
     }
 });
+
+// Mobile specific
+window.addEventListener('touchstart', e => { 
+    const t = e.touches[0];
+    if(!e.target.closest('#ui-right')) handleMoveStart(t.clientX, t.clientY);
+}, { passive: false });
+
+window.addEventListener('touchend', e => {
+    const t = e.changedTouches[0];
+    if(!e.target.closest('#ui-right')) handleMoveEnd(t.clientX, t.clientY);
+});
+
+window.addEventListener('touchmove', e => {
+    if (!isDragging || renderer.xr.isPresenting) return;
+    const t = e.touches[0];
+    const moveX = t.clientX - mouseDownPos.x;
+    yaw -= moveX * 0.005;
+    camera.rotation.set(0, yaw, 0);
+    mouseDownPos.set(t.clientX, t.clientY);
+    isMoving = false;
+}, { passive: false });
 
 const keys = { w:0, a:0, s:0, d:0 };
 window.onkeydown = (e) => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = 1; };
 window.onkeyup = (e) => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = 0; };
 
 /* MAIN LOOP */
-renderer.setAnimationLoop(function () {
-    
-    // 1. VR Raycasting
+renderer.setAnimationLoop((time) => {
+    if (marker.visible) {
+        marker.scale.setScalar(1 + Math.sin(time * 0.01) * 0.1);
+    }
+
     if (renderer.xr.isPresenting) {
         reticle.visible = false;
-
-        // Check Controller 1 (Right hand usually)
         tempMatrix.identity().extractRotation(controller1.matrixWorld);
         raycaster.ray.origin.setFromMatrixPosition(controller1.matrixWorld);
         raycaster.ray.direction.set(0, 0, -1).applyMatrix4(tempMatrix);
-
         const hits = raycaster.intersectObjects(collidables);
         if (hits.length > 0) {
             reticle.visible = true;
@@ -209,15 +212,16 @@ renderer.setAnimationLoop(function () {
         }
     }
 
-    // 2. Smooth Movement
     if (isMoving) {
         userRig.position.lerp(rigTarget, LERP_SPEED);
-        if (userRig.position.distanceTo(rigTarget) < 0.05) isMoving = false;
+        if (userRig.position.distanceTo(rigTarget) < 0.1) {
+            isMoving = false;
+            marker.visible = false;
+        }
     }
 
-    // 3. Desktop WASD
     if (!renderer.xr.isPresenting && (keys.w || keys.a || keys.s || keys.d)) {
-        isMoving = false;
+        isMoving = false; marker.visible = false;
         const forward = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
         const right = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
         const moveVec = new THREE.Vector3();
@@ -226,22 +230,12 @@ renderer.setAnimationLoop(function () {
         if (keys.a) moveVec.add(right.negate());
         if (keys.d) moveVec.add(right);
         moveVec.normalize().multiplyScalar(MOVE_SPEED);
-        userRig.position.x += moveVec.x;
-        userRig.position.z += moveVec.z;
-        
-        // Floor Snap
-        const correctY = getFloorY(userRig.position.x, userRig.position.z, userRig.position.y);
-        userRig.position.y = THREE.MathUtils.lerp(userRig.position.y, correctY, 0.2);
+        userRig.position.add(moveVec);
+        userRig.position.y = THREE.MathUtils.lerp(userRig.position.y, getFloorY(userRig.position.x, userRig.position.z, userRig.position.y), 0.2);
         rigTarget.copy(userRig.position);
     }
 
-    // 4. VR/Desktop Camera Height Adjustment
-    if(renderer.xr.isPresenting) {
-        camera.position.y = 0; 
-    } else {
-        camera.position.y = EYE_HEIGHT_DESKTOP;
-    }
-
+    camera.position.y = renderer.xr.isPresenting ? 0 : EYE_HEIGHT_DESKTOP;
     renderer.render(scene, camera);
 });
 
