@@ -57,3 +57,7 @@ body {
     border-right-color: #4facfe; 
     background: rgba(255, 255, 255, 0.1);
 }
+canvas {
+    display: block;
+    touch-action: none; /* Prevents mobile scrolling */
+}
